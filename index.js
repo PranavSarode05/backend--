@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
-const OpenAI = require('openai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
 // Load environment variables
@@ -27,11 +27,9 @@ process.on('unhandledRejection', (reason, promise) => {
 
 async function getSmartReplacement(findText, context) {
   try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [
-        { role: 'system', content: 'You are an expert editor helping with context-aware content replacement. Understand the article context and suggest replacements that maintain meaning, style, and accuracy. For product names, ensure logical replacements (e.g., "Gemini 2.5 Pro" → "Claude Sonnet", not "Claude 2.5 Pro").' },
-        { role: 'user', content: `Context from the article: "${context}". 
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    
+    const prompt = `Context from the article: "${context}".
 
 Find text to replace: "${findText}"
 
@@ -41,13 +39,13 @@ Provide a smart, contextually appropriate replacement that:
 3. Preserves proper product names and versions
 4. Uses appropriate terminology for the domain
 
-Provide only the replacement text, no explanations.` }
-      ],
-      max_tokens: 100
-    });
-    return response.choices[0].message.content.trim();
+Provide only the replacement text, no explanations.`;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    return response.text().trim();
   } catch (error) {
-    console.error('OpenAI error:', error);
+    console.error('Gemini error:', error);
     return null;
   }
 }
