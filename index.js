@@ -165,7 +165,16 @@ async function login() {
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+const corsOptions = {
+  origin: [
+    'https://frontend-app.eu-contentstackapps.com',
+    'http://localhost:3000', // For development
+    'https://backend-f4ee.vercel.app' // Allow backend itself
+  ],
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 
 // ------------------ FETCH ENTRIES ------------------
 app.get('/entries', async (req, res) => {
