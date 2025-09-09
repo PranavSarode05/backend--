@@ -1,0 +1,13 @@
+[
+  {
+    "name": "Techsurf",
+    "source_type": "manual",
+    "source": null,
+    "communication_style": {
+      "formality_level": 4,
+      "tone": 2,
+      "humor_level": 4,
+      "complexity_level": 4
+    }
+  }
+]
