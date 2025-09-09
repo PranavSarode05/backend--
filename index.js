@@ -152,12 +152,16 @@ async function login() {
   try {
     const response = await axios.post(`${BASE_URL}/user-session`, {
       user: {
-        email: process.env.CONTENTSTACK_USER_EMAIL?.trim(),
-        password: process.env.CONTENTSTACK_USER_PASSWORD?.trim()
+        email: process.env.CONTENTSTACK_USER_EMAIL,
+        password: process.env.CONTENTSTACK_USER_PASSWORD
       }
     });
     authtoken = response.data.user.authtoken;
     console.log('Logged in successfully');
+    console.log('Login response data:', response.data);
+    console.log('Authtoken set to:', authtoken);
+    console.log('Login response data:', response.data);
+    console.log('Authtoken set to:', authtoken);
   } catch (error) {
     console.error('Login failed:', error.response?.data || error.message);
   }
@@ -167,7 +171,7 @@ const app = express();
 app.use(express.json());
 const corsOptions = {
   origin: [
-    'https://frontend-app.eu-contentstackapps.com/', // Production frontend
+    'https://frontend-app.eu-contentstackapps.com',
     'http://localhost:3000', // For development
     'https://backend-f4ee.vercel.app' // Allow backend itself
   ],
