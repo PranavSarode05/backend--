@@ -167,7 +167,7 @@ const app = express();
 app.use(express.json());
 const corsOptions = {
   origin: [
-    'https://smart-find-frontend.launch.contentstack.com', // Production frontend
+    'https://frontend-app.eu-contentstackapps.com/', // Production frontend
     'http://localhost:3000', // For development
     'https://backend-f4ee.vercel.app' // Allow backend itself
   ],
