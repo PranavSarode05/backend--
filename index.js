@@ -9,9 +9,9 @@ const API_KEY = process.env.CONTENTSTACK_API_KEY?.trim();
 const ENVIRONMENT = process.env.CONTENTSTACK_ENVIRONMENT?.trim();
 const BASE_URL = process.env.BASE_URL?.trim(); // Changed to use BASE_URL from .env
 const MANAGEMENT_TOKEN = process.env.CONTENTSTACK_MANAGEMENT_TOKEN?.trim();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-console.log('OPENAI_API_KEY:', process.env.OPENAI_API_KEY);
+console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY);
 console.log('CONTENTSTACK_BASE_URL:', process.env.CONTENTSTACK_BASE_URL);
 console.log('BASE_URL:', BASE_URL);
 
@@ -156,8 +156,6 @@ async function login() {
     });
     authtoken = response.data.user.authtoken;
     console.log('Logged in successfully');
-    console.log('Login response data:', response.data);
-    console.log('Authtoken set to:', authtoken);
     console.log('Login response data:', response.data);
     console.log('Authtoken set to:', authtoken);
   } catch (error) {
