@@ -12,7 +12,6 @@ const MANAGEMENT_TOKEN = process.env.CONTENTSTACK_MANAGEMENT_TOKEN?.trim();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY);
-console.log('CONTENTSTACK_BASE_URL:', process.env.CONTENTSTACK_BASE_URL);
 console.log('BASE_URL:', BASE_URL);
 
 process.on('uncaughtException', (err) => {
