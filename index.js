@@ -26,6 +26,8 @@ process.on('unhandledRejection', (reason, promise) => {
 
 async function getSmartReplacement(findText, context) {
   try {
+    console.log('Calling Gemini API...');
+    console.log('Prompt length:', prompt.length);
     const model = genAI.getGenerativeModel({ model: "gemini-pro" });
     
     const prompt = `Context from the article: "${context}".
@@ -41,10 +43,13 @@ Provide a smart, contextually appropriate replacement that:
 Provide only the replacement text, no explanations.`;
 
     const result = await model.generateContent(prompt);
+    console.log('Gemini API call successful');
     const response = await result.response;
-    return response.text().trim();
+    const text = response.text().trim();
+    console.log('Gemini response length:', text.length);
+    return text;
   } catch (error) {
-    console.error('Gemini error:', error);
+    console.error('Gemini error details:', error.response?.data || error.message);
     return null;
   }
 }
