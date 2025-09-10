@@ -30,7 +30,7 @@ process.on('unhandledRejection', (reason, promise) => {
 async function getSmartReplacement(findText, context) {
   try {
     console.log('Calling Gemini API...');
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     
     const prompt = `Context from the article: "${context}".
 
