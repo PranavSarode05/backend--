@@ -11,6 +11,9 @@ const BASE_URL = process.env.BASE_URL?.trim(); // Changed to use BASE_URL from .
 const MANAGEMENT_TOKEN = process.env.CONTENTSTACK_MANAGEMENT_TOKEN?.trim();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// ⭐ FIX: Declare authtoken variable globally
+let authtoken = null;
+
 console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY);
 console.log('BASE_URL:', BASE_URL);
 
@@ -27,7 +30,6 @@ process.on('unhandledRejection', (reason, promise) => {
 async function getSmartReplacement(findText, context) {
   try {
     console.log('Calling Gemini API...');
-    console.log('Prompt length:', prompt.length);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     
     const prompt = `Context from the article: "${context}".
@@ -42,6 +44,9 @@ Provide a smart, contextually appropriate replacement that:
 
 Provide only the replacement text, no explanations.`;
 
+    // ⭐ FIX: Moved prompt.length log after prompt is defined
+    console.log('Prompt length:', prompt.length);
+    
     const result = await model.generateContent(prompt);
     console.log('Gemini API call successful');
     const response = await result.response;
@@ -162,8 +167,10 @@ async function login() {
     console.log('Logged in successfully');
     console.log('Login response data:', response.data);
     console.log('Authtoken set to:', authtoken);
+    return authtoken;
   } catch (error) {
     console.error('Login failed:', error.response?.data || error.message);
+    throw error; // ⭐ IMPROVEMENT: Throw error so calling functions know login failed
   }
 }
 
@@ -191,6 +198,12 @@ app.get('/entries', async (req, res) => {
     } else {
       console.log('Using existing authtoken');
     }
+    
+    // ⭐ IMPROVEMENT: Add validation to ensure authtoken exists after login
+    if (!authtoken) {
+      throw new Error('Failed to obtain authentication token');
+    }
+    
     const response = await axios.get(`${BASE_URL}/content_types/article/entries`, {
       params: { environment: ENVIRONMENT },
       headers: {
@@ -214,6 +227,11 @@ app.post('/suggest', async (req, res) => {
 
   try {
     await login(); // Ensure valid authtoken
+    
+    if (!authtoken) {
+      throw new Error('Failed to obtain authentication token');
+    }
+    
     const entryResponse = await axios.get(`${BASE_URL}/content_types/article/entries/${uid}`, {
       params: { environment: ENVIRONMENT },
       headers: {
@@ -249,10 +267,15 @@ app.post('/replace', async (req, res) => {
   try {
     await login(); // Refresh authtoken
     console.log('Fetching entry');
+    
+    if (!authtoken) {
+      throw new Error('Failed to obtain authentication token');
+    }
 
     // Check brand guidelines before proceeding
     await checkBrandGuidelines(replaceText);
     console.log('Brand guidelines passed');
+    
     // 1️⃣ Fetch the entry
     const entryResponse = await axios.get(`${BASE_URL}/content_types/article/entries/${uid}`, {
       params: { environment: ENVIRONMENT },
@@ -318,8 +341,13 @@ app.post('/replace', async (req, res) => {
 });
 
 // ------------------ START SERVER ------------------
-const PORT = 5000;
-login();
+const PORT = process.env.PORT || 5000; // ⭐ IMPROVEMENT: Use PORT from environment for Vercel compatibility
+
+// ⭐ IMPROVEMENT: Handle login failure on startup
+login().catch(err => {
+  console.warn('Initial login failed, will retry when needed:', err.message);
+});
+
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
