@@ -28,7 +28,7 @@ async function getSmartReplacement(findText, context) {
   try {
     console.log('Calling Gemini API...');
     console.log('Prompt length:', prompt.length);
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
     
     const prompt = `Context from the article: "${context}".
 
