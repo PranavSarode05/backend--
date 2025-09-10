@@ -183,6 +183,14 @@ app.use(cors(corsOptions));
 // ------------------ FETCH ENTRIES ------------------
 app.get('/entries', async (req, res) => {
   try {
+    console.log('Authtoken before login check:', authtoken);
+    if (!authtoken) {
+      console.log('Calling login...');
+      await login();
+      console.log('Login completed, authtoken:', authtoken);
+    } else {
+      console.log('Using existing authtoken');
+    }
     const response = await axios.get(`${BASE_URL}/content_types/article/entries`, {
       params: { environment: ENVIRONMENT },
       headers: {
