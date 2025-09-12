@@ -27,6 +27,49 @@ process.on('unhandledRejection', (reason, promise) => {
   process.exit(1);
 });
 
+// ✨ NEW: AI Confidence Scoring Function
+function calculateConfidence(suggestion, context, findText) {
+  let score = 50; // Base confidence score
+  
+  // Skip confidence calculation for very short texts
+  if (!suggestion || suggestion.length < 2) return 25;
+  
+  // Boost confidence if suggestion is different from original
+  if (suggestion.toLowerCase() !== findText.toLowerCase()) score += 15;
+  
+  // Check if suggestion appears in context (relevant)
+  if (context && context.toLowerCase().includes(suggestion.toLowerCase())) score += 20;
+  
+  // Check word count similarity (maintains structure)
+  const suggestionWords = suggestion.split(' ').length;
+  const findWords = findText.split(' ').length;
+  if (suggestionWords === findWords) score += 10;
+  
+  // Check capitalization consistency
+  if (/^[A-Z]/.test(suggestion) === /^[A-Z]/.test(findText)) score += 5;
+  
+  // Check for proper nouns/entities (higher confidence)
+  if (/^[A-Z][a-z]+/.test(suggestion)) score += 5;
+  
+  // Check length appropriateness
+  if (suggestion.length >= findText.length * 0.5 && suggestion.length <= findText.length * 2) score += 5;
+  
+  // Penalize very short or single character suggestions
+  if (suggestion.length === 1) score -= 30;
+  
+  // Boost for contextual keywords
+  if (context) {
+    const contextWords = context.toLowerCase().split(' ');
+    const suggestionWords = suggestion.toLowerCase().split(' ');
+    const overlap = suggestionWords.filter(word => contextWords.includes(word)).length;
+    if (overlap > 0) score += overlap * 3;
+  }
+  
+  // Ensure reasonable bounds
+  return Math.min(Math.max(score, 15), 95);
+}
+
+// ✨ UPDATED: Enhanced getSmartReplacement with confidence scoring
 async function getSmartReplacement(findText, context) {
   try {
     console.log('Calling Gemini API...');
@@ -44,18 +87,24 @@ Provide a smart, contextually appropriate replacement that:
 
 Provide only the replacement text, no explanations.`;
 
-    // ⭐ FIX: Moved prompt.length log after prompt is defined
     console.log('Prompt length:', prompt.length);
     
     const result = await model.generateContent(prompt);
     console.log('Gemini API call successful');
     const response = await result.response;
-    const text = response.text().trim();
-    console.log('Gemini response length:', text.length);
-    return text;
+    const suggestion = response.text().trim();
+    
+    // ✨ NEW: Calculate confidence score
+    const confidence = calculateConfidence(suggestion, context, findText);
+    
+    console.log('Gemini response length:', suggestion.length);
+    console.log('Calculated confidence:', confidence);
+    
+    // Return both suggestion and confidence
+    return { suggestion, confidence };
   } catch (error) {
     console.error('Gemini error details:', error.response?.data || error.message);
-    return null;
+    return { suggestion: null, confidence: 0 };
   }
 }
 
@@ -96,15 +145,6 @@ async function validateWithBrandkit(text) {
     if (score < 2) {
       throw new Error('Text does not match the brand communication style');
     }
-
-    // Note: API call to Contentstack Brandkit removed due to 404 errors
-    // const response = await axios.post('https://eu-ai.contentstack.com/brand-kits', {
-    //   text: text,
-    //   apiKey: process.env.BRANDKIT_API_KEY
-    // });
-    // if (!response.data.approved) {
-    //   throw new Error(response.data.message || 'Text not approved by Brandkit');
-    // }
   } catch (error) {
     throw new Error('Brandkit validation failed: ' + error.message);
   }
@@ -170,7 +210,7 @@ async function login() {
     return authtoken;
   } catch (error) {
     console.error('Login failed:', error.response?.data || error.message);
-    throw error; // ⭐ IMPROVEMENT: Throw error so calling functions know login failed
+    throw error;
   }
 }
 
@@ -199,7 +239,6 @@ app.get('/entries', async (req, res) => {
       console.log('Using existing authtoken');
     }
     
-    // ⭐ IMPROVEMENT: Add validation to ensure authtoken exists after login
     if (!authtoken) {
       throw new Error('Failed to obtain authentication token');
     }
@@ -208,7 +247,7 @@ app.get('/entries', async (req, res) => {
       params: { environment: ENVIRONMENT },
       headers: {
         api_key: API_KEY,
-        access_token: authtoken // Management Token required
+        access_token: authtoken
       }
     });
     res.json(response.data.entries);
@@ -218,7 +257,7 @@ app.get('/entries', async (req, res) => {
   }
 });
 
-// ------------------ SUGGEST REPLACEMENT ------------------
+// ✨ UPDATED: Enhanced suggest endpoint with confidence scoring
 app.post('/suggest', async (req, res) => {
   const { uid, findText } = req.body;
   if (!uid || !findText) {
@@ -240,9 +279,14 @@ app.post('/suggest', async (req, res) => {
       }
     });
     const context = entryResponse.data.entry.body;
-    const suggestion = await getSmartReplacement(findText, context);
-    if (suggestion) {
-      res.json({ suggestion });
+    const result = await getSmartReplacement(findText, context);
+    
+    if (result.suggestion) {
+      // ✨ NEW: Return both suggestion and confidence
+      res.json({ 
+        suggestion: result.suggestion,
+        confidence: result.confidence 
+      });
     } else {
       res.status(500).json({ error: 'Could not generate suggestion' });
     }
@@ -293,15 +337,14 @@ app.post('/replace', async (req, res) => {
     const linkRegex = /<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/gi;
 
     // Named entity regex
-    const personRegex = /\b[A-Z][a-z]+\s[A-Z][a-z]+\b/g; // Simple person name regex (e.g., John Doe)
-    const companyRegex = /\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s(?:Inc|Corp|LLC|Company|Ltd)\b/g; // Simple company name regex (e.g., Alpha Company Inc)
+    const personRegex = /\b[A-Z][a-z]+\s[A-Z][a-z]+\b/g;
+    const companyRegex = /\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s(?:Inc|Corp|LLC|Company|Ltd)\b/g;
 
     // Apply deep replace to the entire entry for deep content coverage
     const updatedEntry = deepReplace(entry, findText, replaceText, emailRegex, personRegex, companyRegex, linkRegex);
 
     console.log('Updated body:', updatedEntry.body);
 
-    console.log('Updating entry');
     console.log('Updating entry');
     // 3️⃣ Update the entry with deep replaced data
     await axios.put(`${BASE_URL}/content_types/article/entries/${uid}`,
@@ -341,9 +384,9 @@ app.post('/replace', async (req, res) => {
 });
 
 // ------------------ START SERVER ------------------
-const PORT = process.env.PORT || 5000; // ⭐ IMPROVEMENT: Use PORT from environment for Vercel compatibility
+const PORT = process.env.PORT || 5000;
 
-// ⭐ IMPROVEMENT: Handle login failure on startup
+// Handle login failure on startup
 login().catch(err => {
   console.warn('Initial login failed, will retry when needed:', err.message);
 });
