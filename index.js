@@ -7,11 +7,11 @@ require('dotenv').config();
 // Load environment variables
 const API_KEY = process.env.CONTENTSTACK_API_KEY?.trim();
 const ENVIRONMENT = process.env.CONTENTSTACK_ENVIRONMENT?.trim();
-const BASE_URL = process.env.BASE_URL?.trim(); // Changed to use BASE_URL from .env
+const BASE_URL = process.env.BASE_URL?.trim();
 const MANAGEMENT_TOKEN = process.env.CONTENTSTACK_MANAGEMENT_TOKEN?.trim();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// ⭐ FIX: Declare authtoken variable globally
+// Declare authtoken variable globally
 let authtoken = null;
 
 console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY);
@@ -27,7 +27,7 @@ process.on('unhandledRejection', (reason, promise) => {
   process.exit(1);
 });
 
-// ✨ NEW: AI Confidence Scoring Function
+// ✨ ENHANCED: AI Confidence Scoring Function
 function calculateConfidence(suggestion, context, findText) {
   let score = 50; // Base confidence score
   
@@ -69,23 +69,36 @@ function calculateConfidence(suggestion, context, findText) {
   return Math.min(Math.max(score, 15), 95);
 }
 
-// ✨ UPDATED: Enhanced getSmartReplacement with confidence scoring
+// ✨ FIXED: Enhanced getSmartReplacement with better prompt
 async function getSmartReplacement(findText, context) {
   try {
     console.log('Calling Gemini API...');
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     
-    const prompt = `Context from the article: "${context}".
+    // ✨ IMPROVED PROMPT - More specific and directive
+    const prompt = `You are an expert content editor helping with smart text replacement.
 
-Find text to replace: "${findText}"
+Content context: "${context}"
 
-Provide a smart, contextually appropriate replacement that:
-1. Maintains the original meaning and intent
-2. Fits naturally in the context
-3. Preserves proper product names and versions
-4. Uses appropriate terminology for the domain
+Task: Replace the phrase "${findText}" with a contextually appropriate alternative.
 
-Provide only the replacement text, no explanations.`;
+Guidelines:
+- Understand the MEANING and category of the original text
+- For AI models: "Gemini 2.5 Pro" → "Claude Sonnet" (NOT "Claude 2.5 Pro")  
+- For products: Replace with equivalent products from different companies
+- For companies: Replace with comparable companies in the same industry
+- For people: Replace with appropriate alternative names
+- Maintain the same tone and context as the original
+
+Examples of CORRECT replacements:
+- "Gemini 2.5 Pro" → "Claude Sonnet"
+- "OpenAI GPT-4" → "Anthropic Claude"
+- "Google Cloud Platform" → "Microsoft Azure"
+- "ChatGPT" → "Claude"
+- "Microsoft" → "Apple"
+- "Amazon Web Services" → "Google Cloud Platform"
+
+Important: Return ONLY the replacement text, nothing else. No explanations, no quotes, just the replacement.`;
 
     console.log('Prompt length:', prompt.length);
     
@@ -97,7 +110,7 @@ Provide only the replacement text, no explanations.`;
     // ✨ NEW: Calculate confidence score
     const confidence = calculateConfidence(suggestion, context, findText);
     
-    console.log('Gemini response length:', suggestion.length);
+    console.log('Gemini response:', suggestion);
     console.log('Calculated confidence:', confidence);
     
     // Return both suggestion and confidence
@@ -337,8 +350,8 @@ app.post('/replace', async (req, res) => {
     const linkRegex = /<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/gi;
 
     // Named entity regex
-    const personRegex = /\b[A-Z][a-z]+\s[A-Z][a-z]+\b/g;
-    const companyRegex = /\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s(?:Inc|Corp|LLC|Company|Ltd)\b/g;
+    const personRegex = /\b[A-Z][a-z]+\s[A-Z][a-z]+\b/g; // Simple person name regex (e.g., John Doe)
+    const companyRegex = /\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s(?:Inc|Corp|LLC|Company|Ltd)\b/g; // Simple company name regex (e.g., Alpha Company Inc)
 
     // Apply deep replace to the entire entry for deep content coverage
     const updatedEntry = deepReplace(entry, findText, replaceText, emailRegex, personRegex, companyRegex, linkRegex);
