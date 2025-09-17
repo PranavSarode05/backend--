@@ -121,6 +121,94 @@ Important: Return ONLY the replacement text, nothing else. No explanations, no q
   }
 }
 
+// ✨ NEW: Smart Prompt Parsing Function
+function parseSmartPrompt(input) {
+  const operations = [];
+  
+  // Pattern 1: Replace "X" with "Y"
+  const replacePattern = /replace\s*["']([^"']+)["']\s*with\s*["']([^"']+)["']/gi;
+  let match;
+  
+  while ((match = replacePattern.exec(input)) !== null) {
+    operations.push({
+      type: 'replace',
+      findText: match[1].trim(),
+      replaceText: match[2].trim()
+    });
+  }
+  
+  // Pattern 2: Set/Update field to value
+  const fieldPattern = /(?:set|update|change)\s+([a-zA-Z_]+)\s+to\s+["']([^"']+)["']/gi;
+  while ((match = fieldPattern.exec(input)) !== null) {
+    operations.push({
+      type: 'field_update',
+      fieldName: match[1].trim(),
+      newValue: match[2].trim()
+    });
+  }
+  
+  // Pattern 3: And field to "value" (continuation pattern)
+  const andPattern = /and\s+([a-zA-Z_]+)\s+to\s+["']([^"']+)["']/gi;
+  while ((match = andPattern.exec(input)) !== null) {
+    operations.push({
+      type: 'field_update',
+      fieldName: match[1].trim(),
+      newValue: match[2].trim()
+    });
+  }
+  
+  return {
+    originalInput: input,
+    operations: operations,
+    isValid: operations.length > 0
+  };
+}
+
+// ✨ NEW: Enhanced AI for Smart Prompts
+async function getSmartPromptSuggestion(smartPrompt, context) {
+  try {
+    console.log('Processing smart prompt with AI...');
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    
+    const prompt = `You are an expert content editor processing a smart replacement command.
+
+Content context: "${context}"
+
+User command: "${smartPrompt}"
+
+Task: Parse this command and provide intelligent suggestions for any missing parts.
+
+For example:
+- If user says "Replace John Smith with Hardik Patel and designation to Manager"
+- You understand: Replace person name AND update a field
+
+Provide a JSON response with:
+{
+  "operations": [
+    {"type": "replace", "findText": "found text", "replaceText": "suggested replacement"},
+    {"type": "field_update", "fieldName": "field name", "newValue": "new value"}
+  ],
+  "confidence": 85
+}
+
+Important: Return ONLY valid JSON, no explanations.`;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const jsonResponse = response.text().trim();
+    
+    try {
+      return JSON.parse(jsonResponse);
+    } catch (parseError) {
+      console.error('Failed to parse AI JSON response:', parseError);
+      return { operations: [], confidence: 0 };
+    }
+  } catch (error) {
+    console.error('Smart prompt AI error:', error);
+    return { operations: [], confidence: 0 };
+  }
+}
+
 const fs = require('fs');
 const path = require('path');
 
@@ -206,6 +294,26 @@ function deepReplace(obj, findText, replaceText, emailRegex, personRegex, compan
     return newObj;
   }
   return obj;
+}
+
+// ✨ NEW: Apply field updates to entry
+function applyFieldUpdates(entry, fieldUpdates) {
+  for (const [fieldName, newValue] of Object.entries(fieldUpdates)) {
+    // Handle common field mappings
+    if (fieldName.toLowerCase() === 'designation' && entry.designation !== undefined) {
+      entry.designation = newValue;
+    } else if (fieldName.toLowerCase() === 'title' && entry.title !== undefined) {
+      entry.title = newValue;
+    } else if (fieldName.toLowerCase() === 'description' && entry.description !== undefined) {
+      entry.description = newValue;
+    } else if (fieldName.toLowerCase() === 'author' && entry.author !== undefined) {
+      entry.author = newValue;
+    } else if (fieldName.toLowerCase() === 'company' && entry.company !== undefined) {
+      entry.company = newValue;
+    }
+    // Add more field mappings as needed for your content type
+  }
+  return entry;
 }
 
 async function login() {
@@ -306,6 +414,196 @@ app.post('/suggest', async (req, res) => {
   } catch (error) {
     console.error('Error getting suggestion:', error);
     res.status(500).json({ error: 'Failed to get suggestion' });
+  }
+});
+
+// ✨ NEW: Smart Prompt Processing Endpoint
+app.post('/smart-suggest', async (req, res) => {
+  const { uid, smartPrompt } = req.body;
+  
+  if (!uid || !smartPrompt) {
+    return res.status(400).json({ error: 'uid and smartPrompt are required' });
+  }
+
+  try {
+    await login();
+    
+    if (!authtoken) {
+      throw new Error('Failed to obtain authentication token');
+    }
+    
+    // Fetch entry for context
+    const entryResponse = await axios.get(`${BASE_URL}/content_types/article/entries/${uid}`, {
+      params: { environment: ENVIRONMENT },
+      headers: { api_key: API_KEY, access_token: authtoken }
+    });
+    
+    const context = entryResponse.data.entry.body;
+    
+    // Parse the smart prompt
+    const parsed = parseSmartPrompt(smartPrompt);
+    
+    if (!parsed.isValid) {
+      return res.status(400).json({ 
+        error: 'Could not understand the prompt. Try: Replace "old text" with "new text"' 
+      });
+    }
+    
+    const processedOperations = [];
+    
+    // Process each operation with AI enhancement and brand validation
+    for (const operation of parsed.operations) {
+      if (operation.type === 'replace') {
+        // Get AI suggestion if user didn't specify replacement
+        let finalReplacement = operation.replaceText;
+        let confidence = 85;
+        
+        if (!finalReplacement) {
+          const aiResult = await getSmartReplacement(operation.findText, context);
+          finalReplacement = aiResult.suggestion;
+          confidence = aiResult.confidence;
+        }
+        
+        // Validate brand compliance
+        let brandCompliant = true;
+        let brandMessage = '';
+        
+        try {
+          await checkBrandGuidelines(finalReplacement);
+          brandMessage = 'Brand compliant';
+        } catch (brandError) {
+          brandCompliant = false;
+          brandMessage = brandError.message;
+        }
+        
+        processedOperations.push({
+          type: 'replace',
+          findText: operation.findText,
+          replaceText: finalReplacement,
+          confidence: confidence,
+          brandCompliant: brandCompliant,
+          brandMessage: brandMessage
+        });
+      } else if (operation.type === 'field_update') {
+        // Validate field updates for brand compliance
+        let brandCompliant = true;
+        let brandMessage = '';
+        
+        try {
+          await checkBrandGuidelines(operation.newValue);
+          brandMessage = 'Brand compliant';
+        } catch (brandError) {
+          brandCompliant = false;
+          brandMessage = brandError.message;
+        }
+        
+        processedOperations.push({
+          type: 'field_update',
+          fieldName: operation.fieldName,
+          newValue: operation.newValue,
+          brandCompliant: brandCompliant,
+          brandMessage: brandMessage
+        });
+      }
+    }
+    
+    res.json({
+      originalPrompt: smartPrompt,
+      operations: processedOperations,
+      brandCompliant: processedOperations.every(op => op.brandCompliant)
+    });
+    
+  } catch (error) {
+    console.error('Smart prompt error:', error);
+    res.status(500).json({ error: 'Failed to process smart prompt' });
+  }
+});
+
+// ✨ NEW: Execute Smart Prompt Operations
+app.post('/smart-replace', async (req, res) => {
+  const { uid, operations } = req.body;
+  
+  if (!uid || !operations || !Array.isArray(operations)) {
+    return res.status(400).json({ error: 'uid and operations array are required' });
+  }
+
+  try {
+    await login();
+    
+    if (!authtoken) {
+      throw new Error('Failed to obtain authentication token');
+    }
+    
+    // Fetch current entry
+    const entryResponse = await axios.get(`${BASE_URL}/content_types/article/entries/${uid}`, {
+      params: { environment: ENVIRONMENT },
+      headers: { api_key: API_KEY, access_token: authtoken }
+    });
+    
+    let entry = entryResponse.data.entry;
+    const locale = entry.locale || 'en-us';
+    
+    // Prepare regex patterns
+    const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
+    const linkRegex = /<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/gi;
+    const personRegex = /\b[A-Z][a-z]+\s[A-Z][a-z]+\b/g;
+    const companyRegex = /\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s(?:Inc|Corp|LLC|Company|Ltd)\b/g;
+    
+    // Apply all operations to the entry
+    const fieldUpdates = {};
+    
+    for (const operation of operations) {
+      if (operation.type === 'replace') {
+        // Apply deep replacement
+        entry = deepReplace(entry, operation.findText, operation.replaceText, 
+                           emailRegex, personRegex, companyRegex, linkRegex);
+      } else if (operation.type === 'field_update') {
+        // Collect field updates
+        fieldUpdates[operation.fieldName] = operation.newValue;
+      }
+    }
+    
+    // Apply field updates
+    if (Object.keys(fieldUpdates).length > 0) {
+      entry = applyFieldUpdates(entry, fieldUpdates);
+    }
+    
+    console.log('Updated entry with smart operations');
+    
+    // Update entry
+    await axios.put(`${BASE_URL}/content_types/article/entries/${uid}`,
+      { entry: entry },
+      {
+        params: { environment: ENVIRONMENT },
+        headers: {
+          api_key: API_KEY,
+          access_token: authtoken,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    // Publish entry
+    await axios.post(`${BASE_URL}/content_types/article/entries/${uid}/publish`,
+      { entry: { environments: [ENVIRONMENT], locales: [locale] } },
+      {
+        params: { environment: ENVIRONMENT },
+        headers: {
+          api_key: API_KEY,
+          access_token: authtoken,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    res.json({ 
+      message: 'Smart replacement completed successfully',
+      operationsApplied: operations.length
+    });
+    
+  } catch (error) {
+    console.error('Smart replace error:', error);
+    res.status(500).json({ error: 'Failed to execute smart replacement' });
   }
 });
 
