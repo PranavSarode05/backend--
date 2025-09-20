@@ -69,7 +69,7 @@ function calculateConfidence(suggestion, context, findText) {
   return Math.min(Math.max(score, 15), 95);
 }
 
-// ✨ FIXED: Enhanced getSmartReplacement with better prompt
+// ✨ ENHANCED: getSmartReplacement with better prompt
 async function getSmartReplacement(findText, context) {
   try {
     console.log('Calling Gemini API...');
@@ -107,7 +107,7 @@ Important: Return ONLY the replacement text, nothing else. No explanations, no q
     const response = await result.response;
     const suggestion = response.text().trim();
     
-    // ✨ NEW: Calculate confidence score
+    // ✨ Calculate confidence score
     const confidence = calculateConfidence(suggestion, context, findText);
     
     console.log('Gemini response:', suggestion);
@@ -296,23 +296,85 @@ function deepReplace(obj, findText, replaceText, emailRegex, personRegex, compan
   return obj;
 }
 
-// ✨ NEW: Apply field updates to entry
+// ✨ ENHANCED: Apply field updates to entry with flexible field mapping
 function applyFieldUpdates(entry, fieldUpdates) {
+  console.log('Applying field updates:', fieldUpdates);
+  console.log('Available entry fields:', Object.keys(entry));
+  
   for (const [fieldName, newValue] of Object.entries(fieldUpdates)) {
-    // Handle common field mappings
-    if (fieldName.toLowerCase() === 'designation' && entry.designation !== undefined) {
-      entry.designation = newValue;
-    } else if (fieldName.toLowerCase() === 'title' && entry.title !== undefined) {
-      entry.title = newValue;
-    } else if (fieldName.toLowerCase() === 'description' && entry.description !== undefined) {
-      entry.description = newValue;
-    } else if (fieldName.toLowerCase() === 'author' && entry.author !== undefined) {
-      entry.author = newValue;
-    } else if (fieldName.toLowerCase() === 'company' && entry.company !== undefined) {
-      entry.company = newValue;
+    const lowerFieldName = fieldName.toLowerCase();
+    let fieldUpdated = false;
+    
+    // ✅ FLEXIBLE FIELD MAPPING - handles common variations
+    
+    // Email/Contact field variations
+    if (['contact', 'email', 'contact_email', 'contact_info'].includes(lowerFieldName)) {
+      if (entry.email !== undefined) { entry.email = newValue; fieldUpdated = true; }
+      else if (entry.contact !== undefined) { entry.contact = newValue; fieldUpdated = true; }
+      else if (entry.contact_email !== undefined) { entry.contact_email = newValue; fieldUpdated = true; }
+      else if (entry.contact_info !== undefined) { entry.contact_info = newValue; fieldUpdated = true; }
     }
-    // Add more field mappings as needed for your content type
+    
+    // Company field variations
+    else if (['company', 'organization', 'company_name', 'org'].includes(lowerFieldName)) {
+      if (entry.company !== undefined) { entry.company = newValue; fieldUpdated = true; }
+      else if (entry.organization !== undefined) { entry.organization = newValue; fieldUpdated = true; }
+      else if (entry.company_name !== undefined) { entry.company_name = newValue; fieldUpdated = true; }
+      else if (entry.org !== undefined) { entry.org = newValue; fieldUpdated = true; }
+    }
+    
+    // Title field variations  
+    else if (['title', 'heading', 'name'].includes(lowerFieldName)) {
+      if (entry.title !== undefined) { entry.title = newValue; fieldUpdated = true; }
+      else if (entry.heading !== undefined) { entry.heading = newValue; fieldUpdated = true; }
+      else if (entry.name !== undefined) { entry.name = newValue; fieldUpdated = true; }
+    }
+    
+    // Designation/Role field variations
+    else if (['designation', 'role', 'position', 'job_title'].includes(lowerFieldName)) {
+      if (entry.designation !== undefined) { entry.designation = newValue; fieldUpdated = true; }
+      else if (entry.role !== undefined) { entry.role = newValue; fieldUpdated = true; }
+      else if (entry.position !== undefined) { entry.position = newValue; fieldUpdated = true; }
+      else if (entry.job_title !== undefined) { entry.job_title = newValue; fieldUpdated = true; }
+    }
+    
+    // Author field variations
+    else if (['author', 'writer', 'created_by_name'].includes(lowerFieldName)) {
+      if (entry.author !== undefined) { entry.author = newValue; fieldUpdated = true; }
+      else if (entry.writer !== undefined) { entry.writer = newValue; fieldUpdated = true; }
+      else if (entry.created_by_name !== undefined) { entry.created_by_name = newValue; fieldUpdated = true; }
+    }
+    
+    // Description field variations
+    else if (['description', 'summary', 'excerpt'].includes(lowerFieldName)) {
+      if (entry.description !== undefined) { entry.description = newValue; fieldUpdated = true; }
+      else if (entry.summary !== undefined) { entry.summary = newValue; fieldUpdated = true; }
+      else if (entry.excerpt !== undefined) { entry.excerpt = newValue; fieldUpdated = true; }
+    }
+    
+    // Generic field matching - try direct field name
+    else {
+      if (entry[fieldName] !== undefined) {
+        entry[fieldName] = newValue;
+        fieldUpdated = true;
+      } else if (entry[lowerFieldName] !== undefined) {
+        entry[lowerFieldName] = newValue;
+        fieldUpdated = true;
+      } else {
+        // ✨ NEW: Try to add field anyway (for custom fields)
+        console.log(`Adding new field: ${fieldName} = ${newValue}`);
+        entry[fieldName] = newValue;
+        fieldUpdated = true;
+      }
+    }
+    
+    if (fieldUpdated) {
+      console.log(`✅ Updated field: ${fieldName} = ${newValue}`);
+    } else {
+      console.warn(`⚠️ Field not found in entry: ${fieldName}`);
+    }
   }
+  
   return entry;
 }
 
@@ -347,6 +409,44 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+// ✨ NEW: Debug endpoint to check entry fields
+app.get('/debug-entry/:uid', async (req, res) => {
+  try {
+    await login();
+    
+    if (!authtoken) {
+      throw new Error('Failed to obtain authentication token');
+    }
+    
+    const entryResponse = await axios.get(`${BASE_URL}/content_types/article/entries/${req.params.uid}`, {
+      params: { environment: ENVIRONMENT },
+      headers: {
+        api_key: API_KEY,
+        access_token: authtoken
+      }
+    });
+    
+    const entry = entryResponse.data.entry;
+    const fields = Object.keys(entry);
+    
+    console.log('Entry fields:', fields);
+    res.json({ 
+      uid: entry.uid,
+      fields: fields,
+      fieldTypes: Object.keys(entry).map(key => ({
+        name: key,
+        type: typeof entry[key],
+        value: Array.isArray(entry[key]) ? '[Array]' : 
+               typeof entry[key] === 'object' ? '[Object]' : 
+               String(entry[key]).substring(0, 100)
+      }))
+    });
+  } catch (error) {
+    console.error('Debug entry error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // ------------------ FETCH ENTRIES ------------------
 app.get('/entries', async (req, res) => {
@@ -403,7 +503,7 @@ app.post('/suggest', async (req, res) => {
     const result = await getSmartReplacement(findText, context);
     
     if (result.suggestion) {
-      // ✨ NEW: Return both suggestion and confidence
+      // ✨ Return both suggestion and confidence
       res.json({ 
         suggestion: result.suggestion,
         confidence: result.confidence 
