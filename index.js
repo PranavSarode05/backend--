@@ -4,14 +4,12 @@ const cors = require('cors');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
-// Load environment variables
 const API_KEY = process.env.CONTENTSTACK_API_KEY?.trim();
 const ENVIRONMENT = process.env.CONTENTSTACK_ENVIRONMENT?.trim();
 const BASE_URL = process.env.BASE_URL?.trim();
 const MANAGEMENT_TOKEN = process.env.CONTENTSTACK_MANAGEMENT_TOKEN?.trim();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Declare authtoken variable globally
 let authtoken = null;
 
 console.log('GEMINI_API_KEY:', process.env.GEMINI_API_KEY);
@@ -27,37 +25,27 @@ process.on('unhandledRejection', (reason, promise) => {
   process.exit(1);
 });
 
-// ✨ ENHANCED: AI Confidence Scoring Function
 function calculateConfidence(suggestion, context, findText) {
-  let score = 50; // Base confidence score
+  let score = 50;
   
-  // Skip confidence calculation for very short texts
   if (!suggestion || suggestion.length < 2) return 25;
   
-  // Boost confidence if suggestion is different from original
   if (suggestion.toLowerCase() !== findText.toLowerCase()) score += 15;
   
-  // Check if suggestion appears in context (relevant)
   if (context && context.toLowerCase().includes(suggestion.toLowerCase())) score += 20;
   
-  // Check word count similarity (maintains structure)
   const suggestionWords = suggestion.split(' ').length;
   const findWords = findText.split(' ').length;
   if (suggestionWords === findWords) score += 10;
   
-  // Check capitalization consistency
   if (/^[A-Z]/.test(suggestion) === /^[A-Z]/.test(findText)) score += 5;
   
-  // Check for proper nouns/entities (higher confidence)
   if (/^[A-Z][a-z]+/.test(suggestion)) score += 5;
   
-  // Check length appropriateness
   if (suggestion.length >= findText.length * 0.5 && suggestion.length <= findText.length * 2) score += 5;
   
-  // Penalize very short or single character suggestions
   if (suggestion.length === 1) score -= 30;
   
-  // Boost for contextual keywords
   if (context) {
     const contextWords = context.toLowerCase().split(' ');
     const suggestionWords = suggestion.toLowerCase().split(' ');
@@ -65,17 +53,14 @@ function calculateConfidence(suggestion, context, findText) {
     if (overlap > 0) score += overlap * 3;
   }
   
-  // Ensure reasonable bounds
   return Math.min(Math.max(score, 15), 95);
 }
 
-// ✨ ENHANCED: getSmartReplacement with better prompt
 async function getSmartReplacement(findText, context) {
   try {
     console.log('Calling Gemini API...');
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     
-    // ✨ IMPROVED PROMPT - More specific and directive
     const prompt = `You are an expert content editor helping with smart text replacement.
 
 Content context: "${context}"
@@ -107,13 +92,11 @@ Important: Return ONLY the replacement text, nothing else. No explanations, no q
     const response = await result.response;
     const suggestion = response.text().trim();
     
-    // ✨ Calculate confidence score
     const confidence = calculateConfidence(suggestion, context, findText);
     
     console.log('Gemini response:', suggestion);
     console.log('Calculated confidence:', confidence);
     
-    // Return both suggestion and confidence
     return { suggestion, confidence };
   } catch (error) {
     console.error('Gemini error details:', error.response?.data || error.message);
@@ -121,11 +104,9 @@ Important: Return ONLY the replacement text, nothing else. No explanations, no q
   }
 }
 
-// ✨ NEW: Smart Prompt Parsing Function
 function parseSmartPrompt(input) {
   const operations = [];
   
-  // Pattern 1: Replace "X" with "Y"
   const replacePattern = /replace\s*["']([^"']+)["']\s*with\s*["']([^"']+)["']/gi;
   let match;
   
@@ -137,7 +118,6 @@ function parseSmartPrompt(input) {
     });
   }
   
-  // Pattern 2: Set/Update field to value
   const fieldPattern = /(?:set|update|change)\s+([a-zA-Z_]+)\s+to\s+["']([^"']+)["']/gi;
   while ((match = fieldPattern.exec(input)) !== null) {
     operations.push({
@@ -147,7 +127,6 @@ function parseSmartPrompt(input) {
     });
   }
   
-  // Pattern 3: And field to "value" (continuation pattern)
   const andPattern = /and\s+([a-zA-Z_]+)\s+to\s+["']([^"']+)["']/gi;
   while ((match = andPattern.exec(input)) !== null) {
     operations.push({
@@ -164,7 +143,6 @@ function parseSmartPrompt(input) {
   };
 }
 
-// ✨ NEW: Enhanced AI for Smart Prompts
 async function getSmartPromptSuggestion(smartPrompt, context) {
   try {
     console.log('Processing smart prompt with AI...');
@@ -212,7 +190,6 @@ Important: Return ONLY valid JSON, no explanations.`;
 const fs = require('fs');
 const path = require('path');
 
-// Brandkit validation function (using exported JSON)
 async function validateWithBrandkit(text) {
   try {
     // Load the exported Brandkit JSON
@@ -220,29 +197,22 @@ async function validateWithBrandkit(text) {
     const brandkitData = JSON.parse(fs.readFileSync(brandkitPath, 'utf8'));
     const style = brandkitData[0].communication_style; // Assuming first item
 
-    // Basic validation based on communication_style
     const lowerText = text.toLowerCase();
     let score = 0;
 
-    // Skip strict validation for very short texts (e.g., single words or simple replacements)
     if (text.split(' ').length <= 3) {
-      score = 3; // Pass for short texts
+      score = 3; 
     } else {
-      // Formality check (higher formality_level means more formal words)
       if (style.formality_level > 3 && (lowerText.includes('please') || lowerText.includes('thank you'))) score++;
       if (style.formality_level <= 2 && (lowerText.includes('hey') || lowerText.includes('cool'))) score++;
 
-      // Tone check (tone 2 might be neutral)
       if (style.tone === 2 && !lowerText.includes('!') && !lowerText.includes('?')) score++;
 
-      // Humor check (higher humor_level allows more fun words)
       if (style.humor_level > 3 && (lowerText.includes('fun') || lowerText.includes('awesome'))) score++;
 
-      // Complexity check (higher complexity_level allows longer sentences)
       if (style.complexity_level > 3 && text.split(' ').length > 10) score++;
     }
 
-    // If score is low, reject
     if (score < 2) {
       throw new Error('Text does not match the brand communication style');
     }
@@ -251,22 +221,17 @@ async function validateWithBrandkit(text) {
   }
 }
 
-// Brandkit integration function
 async function checkBrandGuidelines(text) {
   await validateWithBrandkit(text);
   return true;
 }
 
-// Deep replace function to handle nested objects, arrays, and text
 function deepReplace(obj, findText, replaceText, emailRegex, personRegex, companyRegex, linkRegex) {
   if (typeof obj === 'string') {
-    // Apply general find & replace
     let result = obj.replace(new RegExp(findText, 'gi'), replaceText);
-    // Apply entity replacements
     result = result.replace(emailRegex, (match) => match === findText ? replaceText : match);
     result = result.replace(personRegex, (match) => match === findText ? replaceText : match);
     result = result.replace(companyRegex, (match) => match === findText ? replaceText : match);
-    // Apply link replacements
     result = result.replace(linkRegex, (match, href, text) => {
       if (href === findText) return `<a href="${replaceText}">${text}</a>`;
       if (text === findText) {
@@ -284,7 +249,6 @@ function deepReplace(obj, findText, replaceText, emailRegex, personRegex, compan
   } else if (typeof obj === 'object' && obj !== null) {
     const newObj = {};
     for (const key in obj) {
-      // Skip system fields
       if (['uid', 'created_at', '_version', 'created_by', 'updated_at', 'updated_by'].includes(key)) {
         newObj[key] = obj[key];
       } else {
@@ -296,7 +260,6 @@ function deepReplace(obj, findText, replaceText, emailRegex, personRegex, compan
   return obj;
 }
 
-// ✨ ENHANCED: Apply field updates to entry with flexible field mapping
 function applyFieldUpdates(entry, fieldUpdates) {
   console.log('Applying field updates:', fieldUpdates);
   console.log('Available entry fields:', Object.keys(entry));
@@ -305,17 +268,13 @@ function applyFieldUpdates(entry, fieldUpdates) {
     const lowerFieldName = fieldName.toLowerCase();
     let fieldUpdated = false;
     
-    // ✅ FLEXIBLE FIELD MAPPING - handles common variations
-    
-    // Email/Contact field variations
-    if (['contact', 'email', 'contact_email', 'contact_info'].includes(lowerFieldName)) {
+        if (['contact', 'email', 'contact_email', 'contact_info'].includes(lowerFieldName)) {
       if (entry.email !== undefined) { entry.email = newValue; fieldUpdated = true; }
       else if (entry.contact !== undefined) { entry.contact = newValue; fieldUpdated = true; }
       else if (entry.contact_email !== undefined) { entry.contact_email = newValue; fieldUpdated = true; }
       else if (entry.contact_info !== undefined) { entry.contact_info = newValue; fieldUpdated = true; }
     }
     
-    // Company field variations
     else if (['company', 'organization', 'company_name', 'org'].includes(lowerFieldName)) {
       if (entry.company !== undefined) { entry.company = newValue; fieldUpdated = true; }
       else if (entry.organization !== undefined) { entry.organization = newValue; fieldUpdated = true; }
@@ -323,14 +282,12 @@ function applyFieldUpdates(entry, fieldUpdates) {
       else if (entry.org !== undefined) { entry.org = newValue; fieldUpdated = true; }
     }
     
-    // Title field variations  
     else if (['title', 'heading', 'name'].includes(lowerFieldName)) {
       if (entry.title !== undefined) { entry.title = newValue; fieldUpdated = true; }
       else if (entry.heading !== undefined) { entry.heading = newValue; fieldUpdated = true; }
       else if (entry.name !== undefined) { entry.name = newValue; fieldUpdated = true; }
     }
     
-    // Designation/Role field variations
     else if (['designation', 'role', 'position', 'job_title'].includes(lowerFieldName)) {
       if (entry.designation !== undefined) { entry.designation = newValue; fieldUpdated = true; }
       else if (entry.role !== undefined) { entry.role = newValue; fieldUpdated = true; }
@@ -338,21 +295,18 @@ function applyFieldUpdates(entry, fieldUpdates) {
       else if (entry.job_title !== undefined) { entry.job_title = newValue; fieldUpdated = true; }
     }
     
-    // Author field variations
     else if (['author', 'writer', 'created_by_name'].includes(lowerFieldName)) {
       if (entry.author !== undefined) { entry.author = newValue; fieldUpdated = true; }
       else if (entry.writer !== undefined) { entry.writer = newValue; fieldUpdated = true; }
       else if (entry.created_by_name !== undefined) { entry.created_by_name = newValue; fieldUpdated = true; }
     }
     
-    // Description field variations
     else if (['description', 'summary', 'excerpt'].includes(lowerFieldName)) {
       if (entry.description !== undefined) { entry.description = newValue; fieldUpdated = true; }
       else if (entry.summary !== undefined) { entry.summary = newValue; fieldUpdated = true; }
       else if (entry.excerpt !== undefined) { entry.excerpt = newValue; fieldUpdated = true; }
     }
     
-    // Generic field matching - try direct field name
     else {
       if (entry[fieldName] !== undefined) {
         entry[fieldName] = newValue;
@@ -361,7 +315,6 @@ function applyFieldUpdates(entry, fieldUpdates) {
         entry[lowerFieldName] = newValue;
         fieldUpdated = true;
       } else {
-        // ✨ NEW: Try to add field anyway (for custom fields)
         console.log(`Adding new field: ${fieldName} = ${newValue}`);
         entry[fieldName] = newValue;
         fieldUpdated = true;
@@ -410,7 +363,6 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// ✨ NEW: Debug endpoint to check entry fields
 app.get('/debug-entry/:uid', async (req, res) => {
   try {
     await login();
@@ -478,7 +430,6 @@ app.get('/entries', async (req, res) => {
   }
 });
 
-// ✨ UPDATED: Enhanced suggest endpoint with confidence scoring
 app.post('/suggest', async (req, res) => {
   const { uid, findText } = req.body;
   if (!uid || !findText) {
@@ -486,7 +437,7 @@ app.post('/suggest', async (req, res) => {
   }
 
   try {
-    await login(); // Ensure valid authtoken
+    await login();
     
     if (!authtoken) {
       throw new Error('Failed to obtain authentication token');
@@ -503,7 +454,6 @@ app.post('/suggest', async (req, res) => {
     const result = await getSmartReplacement(findText, context);
     
     if (result.suggestion) {
-      // ✨ Return both suggestion and confidence
       res.json({ 
         suggestion: result.suggestion,
         confidence: result.confidence 
@@ -517,7 +467,6 @@ app.post('/suggest', async (req, res) => {
   }
 });
 
-// ✨ NEW: Smart Prompt Processing Endpoint
 app.post('/smart-suggest', async (req, res) => {
   const { uid, smartPrompt } = req.body;
   
@@ -532,7 +481,6 @@ app.post('/smart-suggest', async (req, res) => {
       throw new Error('Failed to obtain authentication token');
     }
     
-    // Fetch entry for context
     const entryResponse = await axios.get(`${BASE_URL}/content_types/article/entries/${uid}`, {
       params: { environment: ENVIRONMENT },
       headers: { api_key: API_KEY, access_token: authtoken }
@@ -540,7 +488,6 @@ app.post('/smart-suggest', async (req, res) => {
     
     const context = entryResponse.data.entry.body;
     
-    // Parse the smart prompt
     const parsed = parseSmartPrompt(smartPrompt);
     
     if (!parsed.isValid) {
@@ -551,10 +498,8 @@ app.post('/smart-suggest', async (req, res) => {
     
     const processedOperations = [];
     
-    // Process each operation with AI enhancement and brand validation
     for (const operation of parsed.operations) {
       if (operation.type === 'replace') {
-        // Get AI suggestion if user didn't specify replacement
         let finalReplacement = operation.replaceText;
         let confidence = 85;
         
@@ -564,7 +509,6 @@ app.post('/smart-suggest', async (req, res) => {
           confidence = aiResult.confidence;
         }
         
-        // Validate brand compliance
         let brandCompliant = true;
         let brandMessage = '';
         
@@ -585,7 +529,6 @@ app.post('/smart-suggest', async (req, res) => {
           brandMessage: brandMessage
         });
       } else if (operation.type === 'field_update') {
-        // Validate field updates for brand compliance
         let brandCompliant = true;
         let brandMessage = '';
         
@@ -619,7 +562,6 @@ app.post('/smart-suggest', async (req, res) => {
   }
 });
 
-// ✨ NEW: Execute Smart Prompt Operations
 app.post('/smart-replace', async (req, res) => {
   const { uid, operations } = req.body;
   
@@ -634,7 +576,6 @@ app.post('/smart-replace', async (req, res) => {
       throw new Error('Failed to obtain authentication token');
     }
     
-    // Fetch current entry
     const entryResponse = await axios.get(`${BASE_URL}/content_types/article/entries/${uid}`, {
       params: { environment: ENVIRONMENT },
       headers: { api_key: API_KEY, access_token: authtoken }
@@ -643,34 +584,28 @@ app.post('/smart-replace', async (req, res) => {
     let entry = entryResponse.data.entry;
     const locale = entry.locale || 'en-us';
     
-    // Prepare regex patterns
     const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
     const linkRegex = /<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/gi;
     const personRegex = /\b[A-Z][a-z]+\s[A-Z][a-z]+\b/g;
     const companyRegex = /\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s(?:Inc|Corp|LLC|Company|Ltd)\b/g;
     
-    // Apply all operations to the entry
     const fieldUpdates = {};
     
     for (const operation of operations) {
       if (operation.type === 'replace') {
-        // Apply deep replacement
         entry = deepReplace(entry, operation.findText, operation.replaceText, 
                            emailRegex, personRegex, companyRegex, linkRegex);
       } else if (operation.type === 'field_update') {
-        // Collect field updates
         fieldUpdates[operation.fieldName] = operation.newValue;
       }
     }
     
-    // Apply field updates
     if (Object.keys(fieldUpdates).length > 0) {
       entry = applyFieldUpdates(entry, fieldUpdates);
     }
     
     console.log('Updated entry with smart operations');
     
-    // Update entry
     await axios.put(`${BASE_URL}/content_types/article/entries/${uid}`,
       { entry: entry },
       {
@@ -683,7 +618,6 @@ app.post('/smart-replace', async (req, res) => {
       }
     );
     
-    // Publish entry
     await axios.post(`${BASE_URL}/content_types/article/entries/${uid}/publish`,
       { entry: { environments: [ENVIRONMENT], locales: [locale] } },
       {
@@ -720,18 +654,16 @@ app.post('/replace', async (req, res) => {
   }
 
   try {
-    await login(); // Refresh authtoken
+    await login();
     console.log('Fetching entry');
     
     if (!authtoken) {
       throw new Error('Failed to obtain authentication token');
     }
 
-    // Check brand guidelines before proceeding
     await checkBrandGuidelines(replaceText);
     console.log('Brand guidelines passed');
     
-    // 1️⃣ Fetch the entry
     const entryResponse = await axios.get(`${BASE_URL}/content_types/article/entries/${uid}`, {
       params: { environment: ENVIRONMENT },
       headers: {
@@ -743,21 +675,17 @@ app.post('/replace', async (req, res) => {
     const entry = entryResponse.data.entry;
     const locale = entry.locale || 'en-us';
 
-    // Regex for emails and links
     const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g;
     const linkRegex = /<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/gi;
 
-    // Named entity regex
-    const personRegex = /\b[A-Z][a-z]+\s[A-Z][a-z]+\b/g; // Simple person name regex (e.g., John Doe)
-    const companyRegex = /\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s(?:Inc|Corp|LLC|Company|Ltd)\b/g; // Simple company name regex (e.g., Alpha Company Inc)
+    const personRegex = /\b[A-Z][a-z]+\s[A-Z][a-z]+\b/g;
+    const companyRegex = /\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)*\s(?:Inc|Corp|LLC|Company|Ltd)\b/g;
 
-    // Apply deep replace to the entire entry for deep content coverage
     const updatedEntry = deepReplace(entry, findText, replaceText, emailRegex, personRegex, companyRegex, linkRegex);
 
     console.log('Updated body:', updatedEntry.body);
 
     console.log('Updating entry');
-    // 3️⃣ Update the entry with deep replaced data
     await axios.put(`${BASE_URL}/content_types/article/entries/${uid}`,
       { entry: updatedEntry },
       {
@@ -773,7 +701,6 @@ app.post('/replace', async (req, res) => {
     console.log('Entry updated via PUT');
 
     console.log('Publishing entry');
-    // 4️⃣ Publish the entry
     await axios.post(`${BASE_URL}/content_types/article/entries/${uid}/publish`,
       { entry: { environments: [ENVIRONMENT], locales: [locale] } },
       {
@@ -797,7 +724,6 @@ app.post('/replace', async (req, res) => {
 // ------------------ START SERVER ------------------
 const PORT = process.env.PORT || 5000;
 
-// Handle login failure on startup
 login().catch(err => {
   console.warn('Initial login failed, will retry when needed:', err.message);
 });
